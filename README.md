@@ -11,4 +11,7 @@ Features:
 
 1. **Install deps**
 ```bash
+npm i react react-dom
+npm i -D @types/react @types/react-dom @vitejs/plugin-react
 npm i
+npm run dev
