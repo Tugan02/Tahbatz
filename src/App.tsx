@@ -7,6 +7,21 @@ declare const H: any
 
 const API_KEY = import.meta.env.VITE_HERE_API_KEY
 
+const autosuggest = async (query: string,  at: { lat: number; lng: number },
+  signal?: AbortSignal) => {
+  const url = new URL("https://autosuggest.search.hereapi.com/v1/autosuggest");
+  url.searchParams.set("q", query);
+  url.searchParams.set("apiKey", API_KEY);
+  url.searchParams.set("limit", "5");
+  url.searchParams.set("lang", "he");
+  url.searchParams.set("at", `${at.lat},${at.lng}`); 
+
+  const res = await fetch(url.toString(), { signal });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data.items) ? data.items : [];
+};
+
 function useHereMap(containerId: string, center: LatLng, zoom = 13) {
   const mapRef = useRef<any>(null)
   const platformRef = useRef<any>(null)
@@ -51,7 +66,11 @@ export default function App() {
   const [destQuery, setDestQuery] = useState('')
   const [clickToSetDest, setClickToSetDest] = useState(false)
   const [summary, setSummary] = useState<string>('')
+  const [suggestions, setSuggestions] = useState<any[]>([])
+  const [isSuggesting, setIsSuggesting] = useState(false)
 
+  const autosuggestAbortRef = useRef<AbortController | null>(null)
+  const debounceTimerRef = useRef<number | null>(null)
   const originMarkerRef = useRef<any>(null)
   const destMarkerRef = useRef<any>(null)
   const routeGroupRef = useRef<any>(new H.map.Group())
@@ -198,42 +217,95 @@ export default function App() {
     <div style={{height: '100%'}}>
       <div id="map"></div>
       <div className="panel">
-        <div className="row">
-          <button onClick={onFindMe}>📍 מצא אותי</button>
-          <button className="secondary" onClick={() => { setOrigin(null); setDestination(null); setSummary(''); routeGroupRef.current.removeAll(); }}>
-            איפוס
-          </button>
-        </div>
-        <div className="row">
-          <label>יעד:</label>
-          <input
-            placeholder="כתובת או lat,lon"
-            value={destQuery}
-            onChange={(e)=>setDestQuery(e.target.value)}
-          />
-        </div>
-        <div className="dest-actions">
-          <button onClick={async ()=>{
-            if (!destQuery.trim()) return
-            // lat,lon quick path
-            if (/^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$/.test(destQuery.trim())) {
-              const [latS, lonS] = destQuery.split(',')
-              const p = { lat: parseFloat(latS), lng: parseFloat(lonS) }
-              setDestination(p)
-              return
-            }
-            const p = await geocode(destQuery.trim())
-            if (!p) { alert('לא נמצאה כתובת'); return }
-            setDestination(p)
-          }}>קבע יעד</button>
-          <button onClick={()=> setClickToSetDest(v=>!v)} className="secondary">
-            {clickToSetDest ? 'בטל בחירה במפה' : 'בחר יעד על המפה'}
-          </button>
-          <button onClick={computeRoute}>חשב מסלול</button>
-        </div>
-        <div className="summary">{summary}</div>
-        <div className="footer">Tip: הזן כתובת (בעברית/אנגלית) או קואורדינטות. צריך VITE_HERE_API_KEY.</div>
+      {/* שורת כפתורי מצא/איפוס */}
+      <div className="row buttons">
+        <button onClick={onFindMe}>📍 מצא אותי</button>
+        <button className="secondary" onClick={() => {
+          setOrigin(null); setDestination(null); setSummary(''); routeGroupRef.current.removeAll();
+        }}>
+          איפוס
+        </button>
       </div>
+
+      {/* שורת שדה היעד */}
+      <div className="row field">
+        <label>יעד:</label>
+        <input
+        placeholder="כתובת או lat,lon"
+        value={destQuery}
+        onChange={(e) => {
+          const q = e.target.value;
+          setDestQuery(q);
+          setSuggestions([]);
+
+          if (/^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$/.test(q)) return; // קואורדינטות -> אין הצעות
+          if (q.trim().length < 3) { if (autosuggestAbortRef.current) autosuggestAbortRef.current.abort(); return; }
+
+          if (debounceTimerRef.current) window.clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = window.setTimeout(async () => {
+            try {
+              if (autosuggestAbortRef.current) autosuggestAbortRef.current.abort();
+              const ctrl = new AbortController();
+              autosuggestAbortRef.current = ctrl;
+
+              setIsSuggesting(true);
+
+              // אם טרם לחצו "מצא אותי", נשתמש בנק' ברירת מחדל (ת״א).
+              const at = origin ?? { lat: 32.0853, lng: 34.7818 };
+
+              const items = await autosuggest(q, at, ctrl.signal);
+              setSuggestions(items);
+            } catch (err) {
+              if ((err as any).name !== 'AbortError') console.error('autosuggest error', err);
+            } finally {
+              setIsSuggesting(false);
+            }
+          }, 250);
+        }}
+
+      />
+      <ul style={{listStyle:"none", padding:0, marginTop:"4px", background:"white", border:"1px solid #ddd", borderRadius:"8px"}}>
+      {suggestions.map((s, i) => (
+        <li key={i} style={{padding:"6px 10px", cursor:"pointer"}}
+            onClick={()=>{
+              setDestQuery(s.address?.label || s.title);
+              if (s.position) {
+                setDestination({lat: s.position.lat, lng: s.position.lng});
+              }
+              setSuggestions([]);
+            }}>
+          {s.address?.label || s.title}
+        </li>
+      ))}
+    </ul>
+      </div>
+
+      {/* שורת הכפתורים של היעד/חישוב */}
+      <div className="dest-actions">
+        <button onClick={async ()=>{
+          if (!destQuery.trim()) return
+          if (/^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$/.test(destQuery.trim())) {
+            const [latS, lonS] = destQuery.split(',')
+            const p = { lat: parseFloat(latS), lng: parseFloat(lonS) }
+            setDestination(p)
+            return
+          }
+          const p = await geocode(destQuery.trim())
+          if (!p) { alert('לא נמצאה כתובת'); return }
+          setDestination(p)
+        }}>קבע יעד</button>
+
+        <button onClick={()=> setClickToSetDest(v=>!v)} className="secondary">
+          {clickToSetDest ? 'בטל בחירה במפה' : 'בחר יעד על המפה'}
+        </button>
+
+        <button onClick={computeRoute}>חשב מסלול</button>
+      </div>
+
+      <div className="summary">{summary}</div>
+      <div className="footer"> הזן כתובת (בעברית/אנגלית) או קואורדינטות.</div>
+    </div>
+
     </div>
   )
 }
