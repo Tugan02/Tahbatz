@@ -1,0 +1,25 @@
+.suggestions {
+  position: absolute;
+  top: 100%;
+  inset-inline-end: 0;
+  width: 100%;
+  margin-top: 4px;
+  z-index: 9999;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  max-height: 300px;
+  overflow-y: auto;
+}
+.suggestion {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 10px 12px; cursor: pointer; line-height: 1.35; color: #1f2937;
+}
+.suggestion + .suggestion { border-top: 1px solid #f3f4f6; }
+.suggestion:hover { background: #f9fafb; }
+.suggestion.loading, .suggestion.empty { color: #6b7280; cursor: default; }
+.suggestion .icon { width: 18px; height: 18px; margin-top: 2px; opacity: .8; flex: 0 0 18px; background-repeat: no-repeat; background-position: center; background-size: 16px 16px; }
+.suggestion .icon.pin { mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" fill="%23000" viewBox="0 0 24 24"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.86-3.14-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/></svg>') center / contain no-repeat; background: #374151; }
+.suggestion .icon.history { mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" fill="%23000" viewBox="0 0 24 24"><path d="M13 3a9 9 0 1 0 8.94 8H20a7 7 0 1 1-7-7v2l4-3-4-3v2zM12 7h2v6h-5v-2h3z"/></svg>') center / contain no-repeat; background: #9ca3af; }
+.suggestion .text { white-space: normal; overflow: hidden; text-overflow: ellipsis; }
