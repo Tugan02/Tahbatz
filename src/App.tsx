@@ -22,6 +22,7 @@ const autosuggest = async (query: string,  at: { lat: number; lng: number },
   return Array.isArray(data.items) ? data.items : [];
 };
 
+
 function useHereMap(containerId: string, center: LatLng, zoom = 13) {
   const mapRef = useRef<any>(null)
   const platformRef = useRef<any>(null)
@@ -74,6 +75,37 @@ export default function App() {
   const originMarkerRef = useRef<any>(null)
   const destMarkerRef = useRef<any>(null)
   const routeGroupRef = useRef<any>(new H.map.Group())
+
+  const onDestChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const q = e.target.value
+    setDestQuery(q)
+    setSuggestions([])
+
+    if (/^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$/.test(q)) return
+
+    if (q.trim().length < 3) {
+      if (autosuggestAbortRef.current) autosuggestAbortRef.current.abort()
+      return
+    }
+
+    if (debounceTimerRef.current) window.clearTimeout(debounceTimerRef.current)
+    debounceTimerRef.current = window.setTimeout(async () => {
+      try {
+        if (autosuggestAbortRef.current) autosuggestAbortRef.current.abort()
+        const ctrl = new AbortController()
+        autosuggestAbortRef.current = ctrl
+
+        setIsSuggesting(true)
+        const at = origin ?? { lat: 32.0853, lng: 34.7818 }
+        const items = await autosuggest(q, at, ctrl.signal)
+        setSuggestions(items)
+      } catch (err) {
+        if ((err as any).name !== 'AbortError') console.error('autosuggest error', err)
+      } finally {
+        setIsSuggesting(false)
+      }
+    }, 250)
+  }
 
   // attach group once map exists
   useEffect(() => {
@@ -228,56 +260,52 @@ export default function App() {
       </div>
 
       {/* שורת שדה היעד */}
+      
       <div className="row field">
         <label>יעד:</label>
-        <input
-        placeholder="כתובת או lat,lon"
-        value={destQuery}
-        onChange={(e) => {
-          const q = e.target.value;
-          setDestQuery(q);
-          setSuggestions([]);
 
-          if (/^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$/.test(q)) return; // קואורדינטות -> אין הצעות
-          if (q.trim().length < 3) { if (autosuggestAbortRef.current) autosuggestAbortRef.current.abort(); return; }
+        {/* עטיפה לאינפוט ול-dropdown */}
+        <div className="field-inputwrap">
+          <input
+            placeholder="כתובת או lat,lon"
+            value={destQuery}
+            onChange={onDestChange}  // ← תשאיר את הלוגיקה שלך כאן
+          />
 
-          if (debounceTimerRef.current) window.clearTimeout(debounceTimerRef.current);
-          debounceTimerRef.current = window.setTimeout(async () => {
-            try {
-              if (autosuggestAbortRef.current) autosuggestAbortRef.current.abort();
-              const ctrl = new AbortController();
-              autosuggestAbortRef.current = ctrl;
+          {/* Dropdown ההצעות */}
+          {(isSuggesting || suggestions.length > 0) && (
+            <div className="suggestions">
+              {isSuggesting && suggestions.length === 0 && (
+                <div className="suggestion loading">מחפש…</div>
+              )}
 
-              setIsSuggesting(true);
+              {suggestions.map((s, i) => {
+                const label = s.address?.label || s.title || "";
+                const pos = s.position;
+                const isPlace = !!s.position; // לרוב true בהצעות כתובת/מקום
+                return (
+                  <div
+                    key={i}
+                    className="suggestion"
+                    onMouseDown={(e) => e.preventDefault()} // שלא יאבד פוקוס מה-input
+                    onClick={() => {
+                      setDestQuery(label);
+                      if (pos) setDestination({ lat: pos.lat, lng: pos.lng });
+                      setSuggestions([]);
+                    }}
+                  >
+                    <span className={`icon ${isPlace ? "pin" : "history"}`} />
+                    <div className="text">{label}</div>
+                  </div>
+                );
+              })}
 
-              // אם טרם לחצו "מצא אותי", נשתמש בנק' ברירת מחדל (ת״א).
-              const at = origin ?? { lat: 32.0853, lng: 34.7818 };
-
-              const items = await autosuggest(q, at, ctrl.signal);
-              setSuggestions(items);
-            } catch (err) {
-              if ((err as any).name !== 'AbortError') console.error('autosuggest error', err);
-            } finally {
-              setIsSuggesting(false);
-            }
-          }, 250);
-        }}
-
-      />
-      <ul style={{listStyle:"none", padding:0, marginTop:"4px", background:"white", border:"1px solid #ddd", borderRadius:"8px"}}>
-      {suggestions.map((s, i) => (
-        <li key={i} style={{padding:"6px 10px", cursor:"pointer"}}
-            onClick={()=>{
-              setDestQuery(s.address?.label || s.title);
-              if (s.position) {
-                setDestination({lat: s.position.lat, lng: s.position.lng});
-              }
-              setSuggestions([]);
-            }}>
-          {s.address?.label || s.title}
-        </li>
-      ))}
-    </ul>
+              {!isSuggesting && suggestions.length === 0 && destQuery.trim().length >= 3 && (
+                <div className="suggestion empty">אין הצעות</div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* שורת הכפתורים של היעד/חישוב */}
