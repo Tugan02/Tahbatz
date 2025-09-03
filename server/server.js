@@ -34,7 +34,7 @@ app.get("/api/route", async (req, res) => {
     url.searchParams.set("return", "polyline,summary");
     url.searchParams.set("departureTime", "now");
     url.searchParams.set("apiKey", API_KEY);
-
+    url.searchParams.set("departureTime", new Date().toISOString());
     const r = await fetch(url);
     const j = await r.json();
     return res.status(r.status).json(j);

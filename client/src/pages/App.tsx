@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import TopBar from '../components/TopBar'
+import OriginField from '../components/OriginField' 
 import DestinationField from '../components/DestinationField'
 import { useHereMap } from '../map/HereMap'
 import { apiRoute } from '../services/api'
@@ -9,11 +10,21 @@ type LatLng = { lat:number; lng:number }
 
 function metersToKm(m:number){return (m/1000).toFixed(2)}
 
+const redSvg = `<svg width="28" height="36" viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg">
+    <path d="M14 0C6.268 0 0 6.268 0 14c0 7.047 12.317 21.36 13.39 21.894a.998.998 0 0 0 1.22 0C15.683 35.36 28 21.047 28 14 28 6.268 21.732 0 14 0zm0 21c-3.866 0-7-3.134-7-7s3.134-7 7-7 7 3.134 7 7-3.134 7-7 7z" fill="#E53935"/>
+</svg>`;
+
+const redIcon = new H.map.Icon(redSvg, {
+  size: { w: 28, h: 36 },
+  anchor: { x: 14, y: 36 }
+});
+
 export default function App() {
   const { mapRef } = useHereMap('map', { lat: 32.0853, lng: 34.7818 }, 13)
 
   const [origin, setOrigin] = useState<LatLng | null>(null)
   const [destination, setDestination] = useState<LatLng | null>(null)
+  const [originQuery, setOriginQuery] = useState('')
   const [destQuery, setDestQuery] = useState('')
   const [clickToSetDest, setClickToSetDest] = useState(false)
   const [summary, setSummary] = useState('')
@@ -44,7 +55,9 @@ export default function App() {
 
   const setMarker = (pos:LatLng, isOrigin:boolean) => {
     const map = mapRef.current; if (!map) return
-    const marker = new H.map.Marker(pos)
+      const marker = isOrigin 
+    ? new H.map.Marker(pos) 
+    : new H.map.Marker(pos, { icon: redIcon });
     if (isOrigin) {
       if (originMarkerRef.current) map.removeObject(originMarkerRef.current)
       originMarkerRef.current = marker
@@ -72,7 +85,8 @@ export default function App() {
       (pos)=> {
         const p = { lat: pos.coords.latitude, lng: pos.coords.longitude }
         setOrigin(p); setMarker(p, true)
-        const map = mapRef.current; if (map) map.setCenter(p), map.setZoom(15)
+        setOriginQuery(`${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`) 
+        const map = mapRef.current; if (map) map.setCenter(p), map.setZoom(12)
       },
       (err)=> alert('Failed to get location: ' + err.message),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -81,7 +95,7 @@ export default function App() {
 
   const resetAll = () => {
     const map = mapRef.current; if (!map) return
-    setOrigin(null); setDestination(null); setDestQuery(''); setSummary('')
+    setOrigin(null); setDestination(null); setDestQuery(''); setSummary(''); setOriginQuery('');
     routeGroupRef.current.removeAll()
     if (originMarkerRef.current) map.removeObject(originMarkerRef.current)
     if (destMarkerRef.current) map.removeObject(destMarkerRef.current)
@@ -106,7 +120,7 @@ export default function App() {
     const flex = route?.sections?.[0]?.polyline || route?.polyline
     if (!flex) { setSummary('לא התקבל polyline'); return }
     drawRouteFlexible(flex)
-    const s = route.sections?.[0]?.summary || route.summary
+    const s = route.sections?.[0]?.summary || route?.summary
     setSummary(`~ ${Math.round((s?.duration ?? 0)/60)} דק׳, ~ ${metersToKm(s?.length ?? 0)} ק״מ`)
     fitToObjects()
   }
@@ -118,24 +132,41 @@ export default function App() {
       <div id="map"></div>
       <div className="panel">
         <TopBar onFindMe={onFindMe} onReset={resetAll} />
+        
+
+        <OriginField
+          value={originQuery}
+          onChange={setOriginQuery}
+          onPickOrigin={(lat, lng, label) => {
+            setOrigin({ lat, lng });
+            setOriginQuery(label);
+          }}
+        />
 
         <DestinationField
           originLat={origin?.lat}
           originLng={origin?.lng}
           value={destQuery}
           onChange={setDestQuery}
-          onPickDestination={(lat,lng,label)=>{ setDestination({lat,lng}); setDestQuery(label); }}
+          onPickDestination={(lat, lng, label) => {
+            setDestination({ lat, lng });
+            setDestQuery(label);
+          }}
         />
-
         <div className="dest-actions">
-          <button className="btn" onClick={()=> setClickToSetDest(v=>!v)}>
-            {clickToSetDest ? 'בטל בחירה במפה' : 'בחר יעד על המפה'}
-          </button>
-          <button className="btn" onClick={computeRoute}>חשב מסלול</button>
-        </div>
-
+            <button className="btn spacer" onClick={() => setClickToSetDest((v) => !v)}>
+              {clickToSetDest ? 'בטל בחירה במפה' : 'בחר יעד על המפה'}
+            </button>
+            <button
+              className="btn primary"
+              onClick={computeRoute}
+              disabled={!origin || !destination}
+            >
+              חשב מסלול
+            </button>
+          </div>
         <div className="summary">{summary}</div>
-        <div className="footer">Tip: בחר יעד מאוטוקומפליט או מקליק על המפה.</div>
+        <div className="footer">Tip: בחר מוצא ויעד כדי לחשב מסלול.</div>
       </div>
     </div>
   )
